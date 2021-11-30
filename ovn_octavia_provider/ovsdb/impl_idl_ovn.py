@@ -60,10 +60,6 @@ class Backend(ovs_idl.Backend):
         self.ovsdb_connection = connection
         super().__init__(connection)
 
-    @tenacity.retry(retry=tenacity.retry_always,
-                    wait=tenacity.wait_exponential(),
-                    stop=tenacity.stop_after_delay(60),
-                    reraise=True)
     def start_connection(self, connection):
         try:
             self.ovsdb_connection.start()
