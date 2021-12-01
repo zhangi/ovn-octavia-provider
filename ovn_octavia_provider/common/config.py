@@ -18,7 +18,6 @@ from ovn_octavia_provider.i18n import _
 
 LOG = logging.getLogger(__name__)
 
-
 ovn_opts = [
     cfg.StrOpt('ovn_nb_connection',
                default='tcp:127.0.0.1:6641',
@@ -145,6 +144,10 @@ def get_ovn_sb_ca_cert():
 
 def get_ovn_ovsdb_timeout():
     return cfg.CONF.ovn.ovsdb_connection_timeout
+
+
+def get_ovn_ovsdb_wait_interval():
+    return 5
 
 
 def get_ovn_ovsdb_retry_max_interval():
