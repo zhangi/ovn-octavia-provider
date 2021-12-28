@@ -62,7 +62,8 @@ class Backend(ovs_idl.Backend):
 
     @tenacity.retry(retry=tenacity.retry_if_exception_type(Exception),
                     wait=tenacity.wait_exponential(),
-                    stop=tenacity.stop_after_delay(config.get_ovn_ovsdb_timeout()),
+                    stop=tenacity.stop_after_delay(
+                        config.get_ovn_ovsdb_timeout()),
                     reraise=True)
     def start_connection(self, connection):
         try:

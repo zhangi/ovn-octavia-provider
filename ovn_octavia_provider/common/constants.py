@@ -14,6 +14,7 @@ from octavia_lib.common import constants
 
 
 # TODO(mjozefcz): Use those variables from neutron-lib once released.
+DEVICE_OWNER_HEALTH_MONITOR = "network:health_monitor"
 LRP_PREFIX = "lrp-"
 LB_VIP_PORT_PREFIX = "ovn-lb-vip-"
 OVN_PORT_NAME_EXT_ID_KEY = 'neutron:port_name'

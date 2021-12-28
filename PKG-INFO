@@ -1,6 +1,6 @@
 Metadata-Version: 1.2
 Name: ovn-octavia-provider
-Version: 1.1.101
+Version: 1.1.102
 Summary: OpenStack Octavia integration with OVN
 Home-page: https://docs.openstack.org/ovn-octavia-provider/latest/
 Author: OpenStack
