@@ -2041,7 +2041,7 @@ class OvnProviderHelper():
                     self.ovn_nbdb_api.db_set(
                         'Load_Balancer_Health_Check', hm.uuid,
                         ('vip', vip)))
-            if fip and vip.startswith(hm.vip):
+            if fip and fip.startswith(hm.vip):
                 commands.append(
                     self.ovn_nbdb_api.db_set(
                         'Load_Balancer_Health_Check', hm.uuid,
