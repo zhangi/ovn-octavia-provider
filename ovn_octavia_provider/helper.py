@@ -1962,10 +1962,7 @@ class OvnProviderHelper():
             return status
         fip = ovn_lb.external_ids.get(ovn_const.LB_EXT_IDS_VIP_FIP_KEY)
         vip_port = self._get_pool_listener_port(ovn_lb, pool_key)
-        if not vip_port:
-            # This is not fatal as we can add it when a listener is created
-            vip = []
-        else:
+        if vip_port:
             vip = vip + ':' + vip_port
             if fip:
                 fip = fip + ':' + vip_port
