@@ -1753,6 +1753,13 @@ class OvnProviderHelper():
                 return meminf.split('_')[1]
 
     def create_vip_port(self, project_id, lb_id, vip_d):
+        neutron_client = clients.get_neutron_client()
+
+        port_id = vip_d.get(constants.VIP_PORT_ID)
+        if port_id:
+            port = neutron_client.show_port(port_id)
+            return {'port': port['port']}
+
         port = {'port': {'name': ovn_const.LB_VIP_PORT_PREFIX + str(lb_id),
                          'network_id': vip_d[constants.VIP_NETWORK_ID],
                          'fixed_ips': [{'subnet_id': vip_d['vip_subnet_id']}],
@@ -1763,7 +1770,7 @@ class OvnProviderHelper():
                 vip_d[constants.VIP_ADDRESS])
         except KeyError:
             pass
-        neutron_client = clients.get_neutron_client()
+
         try:
             return neutron_client.create_port(port)
         except n_exc.IpAddressAlreadyAllocatedClient as e:
