@@ -62,7 +62,8 @@ class Backend(ovs_idl.Backend):
 
     @tenacity.retry(retry=tenacity.retry_if_exception_type(Exception),
                     wait=tenacity.wait_exponential(),
-                    stop=tenacity.stop_after_delay(config.get_ovn_ovsdb_timeout()),
+                    stop=tenacity.stop_after_delay(
+                        config.get_ovn_ovsdb_timeout()),
                     reraise=True)
     def start_connection(self, connection):
         try:
@@ -92,7 +93,7 @@ class Backend(ovs_idl.Backend):
 
     def create_transaction(self, check_error=False, log_errors=True):
         return idl_trans.Transaction(
-            self, self.ovsdb_connection, self.ovsdb_connection.timeout,
+            self, self.ovsdb_connection, config.get_ovn_ovsdb_timeout(),
             check_error, log_errors)
 
     # Check for a column match in the table. If not found do a retry with
@@ -154,7 +155,7 @@ class OvsdbNbOvnIdl(nb_impl_idl.OvnNbApiIdlImpl, Backend):
     def create_transaction(self, check_error=False, log_errors=True,
                            bump_nb_cfg=False):
         return OvnNbTransaction(
-            self, self.ovsdb_connection, self.ovsdb_connection.timeout,
+            self, self.ovsdb_connection, config.get_ovn_ovsdb_timeout(),
             check_error, log_errors, bump_nb_cfg=bump_nb_cfg)
 
     @contextlib.contextmanager
