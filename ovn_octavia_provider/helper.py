@@ -18,7 +18,6 @@ import re
 import threading
 
 import netaddr
-from neutron_lib import constants as n_const
 from neutronclient.common import exceptions as n_exc
 from octavia_lib.api.drivers import data_models as o_datamodels
 from octavia_lib.api.drivers import driver_lib as o_driver_lib
@@ -137,11 +136,11 @@ class OvnProviderHelper():
         # one when the network was created
 
         neutron_client = clients.get_neutron_client()
-        meta_dhcp_port = neutron_client.list_ports(
+        health_monitor_port = neutron_client.list_ports(
             network_id=network_id,
-            device_owner=n_const.DEVICE_OWNER_DISTRIBUTED)
-        if meta_dhcp_port['ports']:
-            return meta_dhcp_port['ports'][0]
+            device_owner=ovn_const.DEVICE_OWNER_HEALTH_MONITOR)
+        if health_monitor_port['ports']:
+            return health_monitor_port['ports'][0]
 
     def _get_nw_router_info_on_interface_event(self, lrp):
         """Get the Router and Network information on an interface event
@@ -669,10 +668,11 @@ class OvnProviderHelper():
         if member:
             for mem in member.split(','):
                 mem_split = mem.split('_')
+                member_id = mem_split[1]
                 mem_ip_port = mem_split[2]
                 mem_ip, mem_port = mem_ip_port.rsplit(':', 1)
                 mem_subnet = mem_split[3]
-                mem_info.append((mem_ip, mem_port, mem_subnet))
+                mem_info.append((member_id, mem_ip, mem_port, mem_subnet))
         return mem_info
 
     def _get_member_info(self, member):
@@ -754,7 +754,7 @@ class OvnProviderHelper():
                 continue
 
             ips = []
-            for member_ip, member_port, subnet in self._extract_member_info(
+            for __, member_ip, member_port, __ in self._extract_member_info(
                     lb_external_ids[pool_id]):
                 if netaddr.IPNetwork(member_ip).version == 6:
                     ips.append('[%s]:%s' % (member_ip, member_port))
@@ -1803,12 +1803,41 @@ class OvnProviderHelper():
             commands.append(
                 self.ovn_nbdb_api.db_set('Load_Balancer', ovn_lb.uuid,
                                          ('external_ids', vip_fip_info)))
+            if ovn_lb.health_check:
+                hm = ovn_lb.health_check[0]
+                vip = fip_info['vip_fip']
+                parts = hm.vip.split(":")
+                if len(parts) > 1:
+                    vip_port = parts[1]
+                    vip = '%s:%s' % (vip, vip_port)
+                kwargs = {
+                    'vip': vip,
+                    'options': ovn_lb.health_check[0].options,
+                    'external_ids': ovn_lb.health_check[0].external_ids,
+                }
+                with self.ovn_nbdb_api.transaction(check_error=True) as txn:
+                    fip_health_check = txn.add(
+                        self.ovn_nbdb_api.db_create(
+                            'Load_Balancer_Health_Check',
+                            **kwargs))
+                    txn.add(self.ovn_nbdb_api.db_add(
+                        'Load_Balancer', ovn_lb.uuid,
+                        'health_check', fip_health_check))
         else:
-            external_ids.pop(ovn_const.LB_EXT_IDS_VIP_FIP_KEY)
+            fip = external_ids.pop(ovn_const.LB_EXT_IDS_VIP_FIP_KEY)
             commands.append(
                 self.ovn_nbdb_api.db_remove(
                     'Load_Balancer', ovn_lb.uuid, 'external_ids',
                     (ovn_const.LB_EXT_IDS_VIP_FIP_KEY)))
+            for hm in ovn_lb.health_check:
+                if hm.vip.startswith(fip):
+                    commands.append(
+                        self.ovn_nbdb_api.db_remove(
+                            'Load_Balancer', ovn_lb.uuid,
+                            'health_check', hm.uuid))
+                    commands.append(
+                        self.ovn_nbdb_api.db_destroy(
+                            'Load_Balancer_Health_Check', hm.uuid))
 
         commands.extend(self._refresh_lb_vips(ovn_lb.uuid, external_ids))
         self._execute_commands(commands)
@@ -1931,16 +1960,16 @@ class OvnProviderHelper():
             LOG.error("Could not find VIP for HM %s, LB external_ids: %s",
                       hm_id, ovn_lb.external_ids)
             return status
+        fip = ovn_lb.external_ids.get(ovn_const.LB_EXT_IDS_VIP_FIP_KEY)
         vip_port = self._get_pool_listener_port(ovn_lb, pool_key)
-        if not vip_port:
-            # This is not fatal as we can add it when a listener is created
-            vip = []
-        else:
+        if vip_port:
             vip = vip + ':' + vip_port
+            if fip:
+                fip = fip + ':' + vip_port
 
         # ovn-nbctl --wait=sb --
         #  set Load_Balancer_Health_Check ${ID} options:\"interval\"=6 --
-        #  set Load_Balancer_Health_Check ${ID} options:\"timeoutl\"=2 --
+        #  set Load_Balancer_Health_Check ${ID} options:\"timeout\"=2 --
         #  set Load_Balancer_Health_Check ${ID} options:\"success_count\"=1 --
         #  set Load_Balancer_Health_Check ${ID} options:\"failure_count\"=3
         options = {
@@ -1960,6 +1989,10 @@ class OvnProviderHelper():
             'vip': vip,
             'options': options,
             'external_ids': external_ids}
+        fip_kwargs = {
+            'vip': fip,
+            'options': options,
+            'external_ids': external_ids}
         operating_status = constants.ONLINE
         if not info['admin_state_up']:
             operating_status = constants.OFFLINE
@@ -1972,6 +2005,15 @@ class OvnProviderHelper():
                 txn.add(self.ovn_nbdb_api.db_add(
                     'Load_Balancer', ovn_lb.uuid,
                     'health_check', health_check))
+                if fip:
+                    fip_health_check = txn.add(
+                        self.ovn_nbdb_api.db_create(
+                            'Load_Balancer_Health_Check',
+                            **fip_kwargs))
+                    txn.add(self.ovn_nbdb_api.db_add(
+                        'Load_Balancer', ovn_lb.uuid,
+                        'health_check', fip_health_check))
+
             status = {constants.ID: hm_id,
                       constants.PROVISIONING_STATUS: constants.ACTIVE,
                       constants.OPERATING_STATUS: operating_status}
@@ -1981,30 +2023,36 @@ class OvnProviderHelper():
         return status
 
     def _update_hm_vip(self, ovn_lb, vip_port):
-        hm = self._lookup_hm_by_id(ovn_lb.health_check)
-        if not hm:
-            LOG.error("Could not find HM with key: %s", ovn_lb.health_check)
-            return False
 
         vip = ovn_lb.external_ids.get(ovn_const.LB_EXT_IDS_VIP_KEY)
         if not vip:
-            LOG.error("Could not find VIP for HM %s, LB external_ids: %s",
-                      hm.uuid, ovn_lb.external_ids)
+            LOG.error("Could not find VIP for LB external_ids: %s",
+                      ovn_lb.external_ids)
             return False
+        fip = ovn_lb.external_ids.get(ovn_const.LB_EXT_IDS_VIP_FIP_KEY)
 
         vip = vip + ':' + str(vip_port)
+        if fip:
+            fip = fip + ':' + str(vip_port)
         commands = []
-        commands.append(
-            self.ovn_nbdb_api.db_set(
-                'Load_Balancer_Health_Check', hm.uuid,
-                ('vip', vip)))
+        for hm in ovn_lb.health_check:
+            if vip.startswith(hm.vip):
+                commands.append(
+                    self.ovn_nbdb_api.db_set(
+                        'Load_Balancer_Health_Check', hm.uuid,
+                        ('vip', vip)))
+            if fip and fip.startswith(hm.vip):
+                commands.append(
+                    self.ovn_nbdb_api.db_set(
+                        'Load_Balancer_Health_Check', hm.uuid,
+                        ('vip', fip)))
         self._execute_commands(commands)
         return True
 
     def _update_hm_members(self, ovn_lb, pool_key):
         mappings = {}
         # For each member, set it's HM
-        for member_ip, member_port, member_subnet in self._extract_member_info(
+        for __, member_ip, __, member_subnet in self._extract_member_info(
                 ovn_lb.external_ids[pool_key]):
             member_lsp = self._get_member_lsp(member_ip, member_subnet)
             if not member_lsp:
@@ -2280,8 +2328,8 @@ class OvnProviderHelper():
             member_ip = '[%s]' % member_ip
         mappings[member_ip] = member_src
         lbs = self.ovn_nbdb_api.db_find_rows(
-            'Load_Balancer', (('ip_port_mappings', '=', mappings),
-                              ('protocol', '=', row.protocol))).execute()
+            'Load_Balancer', ('ip_port_mappings', '=', mappings),
+            ('protocol', '=', row.protocol[0])).execute()
         return lbs[0] if lbs else None
 
     def hm_update_event_handler(self, row):
@@ -2390,14 +2438,15 @@ class OvnProviderHelper():
         for k, v in ovn_lb.external_ids.items():
             if ovn_const.LB_EXT_IDS_POOL_PREFIX not in k:
                 continue
-            for member_ip, member_port, subnet in self._extract_member_info(v):
+            for member_info in self._extract_member_info(v):
+                mid, member_ip, member_port, __ = member_info
                 if info['ip'] != member_ip:
                     continue
                 if info['port'] != member_port:
                     continue
                 # match
                 pool_id = k.split('_')[1]
-                member_id = v.split('_')[1]
+                member_id = mid
                 break
 
             # found it in inner loop
