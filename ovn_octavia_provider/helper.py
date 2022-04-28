@@ -957,7 +957,10 @@ class OvnProviderHelper():
             lbalancer_status[constants.PROVISIONING_STATUS] = constants.ERROR
             lbalancer_status[constants.OPERATING_STATUS] = constants.ERROR
         # Delete VIP port from neutron.
-        self.delete_vip_port(port_id)
+        if not loadbalancer['keep_vip_port']:
+            LOG.info("Deleting VIP Port for Load Balancer: %s %s",
+                     port_id, loadbalancer[constants.ID])
+            self.delete_vip_port(port_id)
         return status
 
     def _lb_delete(self, loadbalancer, ovn_lb, status):

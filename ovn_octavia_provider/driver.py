@@ -84,9 +84,11 @@ class OvnProviderDriver(driver_base.ProviderDriver):
                    'info': request_info}
         self._ovn_helper.add_request(request)
 
-    def loadbalancer_delete(self, loadbalancer, cascade=False):
+    def loadbalancer_delete(self, loadbalancer, cascade=False,
+                            keep_vip_port=False):
         request_info = {'id': loadbalancer.loadbalancer_id,
-                        'cascade': cascade}
+                        'cascade': cascade,
+                        'keep_vip_port': keep_vip_port}
         request = {'type': ovn_const.REQ_TYPE_LB_DELETE,
                    'info': request_info}
         self._ovn_helper.add_request(request)
